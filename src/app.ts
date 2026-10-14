@@ -1,48 +1,110 @@
 // Require the framework and instantiate it
 
 // ESM
-import Fastify from 'fastify'
-import 'dotenv/config'
-import cors from '@fastify/cors';
-import helmet from '@fastify/helmet';
-const PORT = parseInt(process.env.PORT ?? '3008');
+import Fastify, { FastifyInstance } from "fastify";
+import "dotenv/config";
+import cors from "@fastify/cors";
+import helmet from "@fastify/helmet";
+import productRoutes from "./routes/products.routes";
+import categoryRoutes from "./routes/categories.routes";
+import orderRoutes from "./routes/orders.routes";
+import swagger from "@fastify/swagger";
+import scalar from "@scalar/fastify-api-reference";
+import jwt from "@fastify/jwt";
+import authRoutes from "./routes/auth.routes";
+import adminUserRoutes from "./routes/admin.users.routes";
+import { errorHandler } from "./middlewares/error.middleware";
 
-const fastify = Fastify({
-  logger: true
-})
+const PORT = parseInt(process.env.PORT ?? "3000");
 
-fastify.register(cors,{
-    origin: true,
-    credentials: true,
-})
+export async function buildApp(): Promise<FastifyInstance> {
+	const fastify = Fastify({
+		logger: {
+			level: process.env.LOG_LEVEL || 'info',
+			serializers: {
+				req(request) {
+					return {
+						method: request.method,
+						url: request.url,
+						// ❌ NÃO logar body, headers com Authorization
+					};
+				},
+				res(reply) {
+					return {
+						statusCode: reply.statusCode,
+					};
+				}
+			}
+		}
+	});
 
-fastify.register(helmet, {
-    contentSecurityPolicy: false
-});
+	fastify.register(jwt, {
+		secret: process.env.JWT_SECRET!
+	});
 
-// Declare a route
-fastify.get('/', async (request, reply) => {
-    return {
-        message: 'E-commerce Syntax Wear API',
-        version: '1.0.0',
-        status: 'running',
-    }
-});
+	fastify.register(cors, {
+		origin: true,
+		credentials: true,
+	});
 
-fastify.get('/health', async (request, reply) => {
-    return {
-        status: 'ok',
-        timestamp: new Date().toISOString(),
-    }
-});
+	fastify.register(helmet, {
+		contentSecurityPolicy: false,
+	});
 
-// Run the server!
-fastify.listen({ port: PORT }, function (err, address) {
-  if (err) {
-    fastify.log.error(err)
-    process.exit(1)
-  }
-  // Server is now listening on ${address}
-})
+	fastify.register(swagger, {
+		openapi: {
+			openapi: "3.0.0",
+			info: {
+				title: "Syntax Wear API",
+				description: "API para o e-commerce Syntax Wear",
+				version: "1.0.0",
+			},
+			servers: [],
+			components: {
+				securitySchemes: {
+					bearerAuth: {
+						type: "http",
+						scheme: "bearer",
+						bearerFormat: "JWT",
+						description: "Autenticação via token JWT",
+					},
+				},
+			},
+		},
+	});
 
-export default fastify;
+	fastify.register(scalar, {
+		routePrefix: "/api-docs",
+		configuration: {
+			theme: "default",
+		},
+	});
+
+	fastify.register(productRoutes, { prefix: "/products" });
+	fastify.register(categoryRoutes, { prefix: "/categories" });
+	fastify.register(orderRoutes, { prefix: "/orders" });
+	fastify.register(authRoutes, { prefix: "/auth" });
+	fastify.register(adminUserRoutes, { prefix: "/admin/users" });
+
+	// Declare a route
+	fastify.get("/", async (request, reply) => {
+		return {
+			message: "E-commerce Syntax Wear API",
+			version: "1.0.0",
+			status: "running",
+		};
+	});
+
+	fastify.get("/health", async (request, reply) => {
+		return {
+			status: "ok",
+			timestamp: new Date().toISOString(),
+		};
+	});
+
+	fastify.setErrorHandler(errorHandler);
+
+	await fastify.ready();
+
+	return fastify;
+}
